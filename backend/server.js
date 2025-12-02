@@ -28,7 +28,7 @@ const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 // ADMIN CREDENTIALS
 const ADMIN_DIRECTORY = {
-    'admin': 'admin',
+    'admin': 'admin', 
     'hr_lead': 'secure_hiring'
 };
 
@@ -36,26 +36,14 @@ const ADMIN_DIRECTORY = {
 const CANDIDATE_DIRECTORY = {
     'candidate@evalueate.com': 'EVAL2025',
     'test@user.com': 'TEST1234',
-    'student@university.edu': 'EXAM2024',
-    'saikiranadhi15@gmail.com': 'SAIKIRAN2024',
-    'akhilbalajiendla@gmail.com': 'AKHIL2024',
-    'rohandubyala@gmail.com': 'ROHAN2024',
-    'pavankatherashala345@gmail.com': 'PAVAN2024',
-    'yashwanthsukumarv@gmail.com': 'YASH2024',
-    'pakasriteja2021@gmail.com': 'TEJA2024',
-    'mandalatony123@gmail.com': 'TONY2024',
-    'vangariushasree041@gmail.com': 'USHASREE2024',
-    'borigamsaicharanya27@gmail.com': 'CHARANYA2024',
-    'namanipragna@gmail.com': 'PRAGNA2024',
-    'manognasadula28@gmail.com': 'MANOGNA2024',
-    'k.chanakya2004@gmail.com': 'CHANAKYA2024'
+    'student@university.edu': 'EXAM2024'
 };
 
 app.use(helmet());
-app.use(cors({ origin: '*', methods: ['POST', 'GET'] }));
+app.use(cors({ origin: '*', methods: ['POST', 'GET'] })); 
 app.use(express.json({ limit: '10mb' }));
 
-const SESSION_STORE = new Map();
+const SESSION_STORE = new Map(); 
 
 // --- UTILS ---
 const cleanJSON = (text) => {
@@ -128,7 +116,7 @@ Strictly valid JSON. No Markdown.
 `;
 
 const PROMPT_S3_CODING = (jd) => `
-Generate EXACTLY 2 distinct LeetCode Medium Coding Problems.
+Generate EXACTLY 2 distinct LeetCode Hard/Medium Coding Problems.
 DISTRIBUTION:
 - Question 1: Pure Data Structures & Algorithms (DSA) - e.g., Graph, Tree, DP, Trie.
 - Question 2: Job Description Specific Scenario related to: "${jd.substring(0, 300)}".
@@ -162,6 +150,28 @@ Analyze the code logic. Does it handle the base case? Does it handle the general
 Return ONLY the integer score (0, 5, 6, 9, 11, 14, 15, or 20).
 `;
 
+const GENERATE_FEEDBACK_PROMPT = (jd, score, maxScore) => `
+Generate a detailed technical feedback report for a candidate applying for the role: "${jd}".
+Score Achieved: ${score} / ${maxScore}.
+
+Task:
+1. Write a 3-4 line professional SUMMARY of their performance based on the score.
+   - If score > 70%: Praise their strong technical grasp and problem-solving skills.
+   - If score < 50%: Highlight gaps in core concepts and coding implementation.
+2. List 3 Key STRENGTHS based on the role.
+3. List 3 Areas of WEAKNESS/IMPROVEMENT.
+4. Provide a 3-step ROADMAP to improve.
+
+Output Format: JSON Object
+{
+  "summary": "...",
+  "strengths": ["...", "...", "..."],
+  "weaknesses": ["...", "...", "..."],
+  "roadmap": ["...", "...", "..."]
+}
+Strictly valid JSON. No Markdown.
+`;
+
 // --- ROUTES ---
 
 app.post('/api/admin/login', (req, res) => {
@@ -189,7 +199,7 @@ app.get('/api/admin/sessions', verifyToken, (req, res) => {
             feedback: session.feedback // Critical: Include feedback for CSV export
         });
     });
-    res.json({ sessions: allSessions.sort((a, b) => b.timestamp - a.timestamp) });
+    res.json({ sessions: allSessions.sort((a,b) => b.timestamp - a.timestamp) });
 });
 
 app.post('/api/admin/evidence', verifyToken, (req, res) => {
@@ -203,7 +213,7 @@ app.post('/api/admin/evidence', verifyToken, (req, res) => {
 app.post('/api/assessment/generate', async (req, res) => {
     try {
         const { jd, candidateName, candidateEmail, accessCode } = req.body;
-
+        
         // AUTHENTICATION CHECK
         if (!CANDIDATE_DIRECTORY[candidateEmail]) {
             return res.status(403).json({ error: "Email not authorized for this assessment." });
@@ -232,13 +242,13 @@ app.post('/api/assessment/generate', async (req, res) => {
         } catch (e) {
             console.error("Gen Failed", e);
             // Dynamic Fallback (Generic Professional)
-            s1Questions = Array.from({ length: 30 }, (_, i) => ({
-                id: i + 1, type: 'MCQ', text: `Technical Assessment Question ${i + 1} (Backup): Select the valid option for scalable architecture.`, options: ['Microservices', 'Monolith', 'Serverless', 'Hybrid'], correctAnswer: 0, marks: 1
+            s1Questions = Array.from({length: 30}, (_, i) => ({
+                id: i+1, type: 'MCQ', text: `Technical Assessment Question ${i+1} (Backup): Select the valid option for scalable architecture.`, options:['Microservices','Monolith','Serverless','Hybrid'], correctAnswer:0, marks:1
             }));
         }
 
         const fullSections = [
-            { id: "s1-mcq", title: "Section 1: Aptitude & Domain (30 Mins)", durationMinutes: 30, type: "MCQ", questions: s1Questions },
+            { id: "s1-mcq", title: "Section 1: CS Fundamentals & Domain (30 Mins)", durationMinutes: 30, type: "MCQ", questions: s1Questions },
             { id: "s2-fitb", title: "Section 2: Technical Core (5 Mins)", durationMinutes: 5, type: "FITB", questions: [], isPending: true },
             { id: "s3-coding", title: "Section 3: Advanced Coding (40 Mins)", durationMinutes: 40, type: "CODING", questions: [], isPending: true }
         ];
@@ -255,10 +265,10 @@ app.post('/api/assessment/generate', async (req, res) => {
         });
 
         const token = generateToken({ sessionId, role: 'CANDIDATE' });
-
+        
         // Strip Answers
         const safeSections = fullSections.map(s => ({
-            ...s, questions: s.questions.map(({ correctAnswer, ...q }) => q)
+            ...s, questions: s.questions.map(({correctAnswer, ...q}) => q)
         }));
 
         res.json({ token, sections: safeSections, sessionId });
@@ -272,29 +282,29 @@ app.post('/api/assessment/generate', async (req, res) => {
 app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
     const session = SESSION_STORE.get(req.user.sessionId);
     if (!session) return res.status(404).json({ error: "Session Not Found" });
-
+    
     const { sectionId } = req.body;
-
+    
     // Check if already generated
     const sectionIndex = session.fullSections.findIndex(s => s.id === sectionId);
     if (sectionIndex === -1) return res.status(400).json({ error: "Invalid Section" });
-
+    
     // If questions exist, return them (idempotency)
     if (session.fullSections[sectionIndex].questions.length > 0) {
-        return res.json({ questions: session.fullSections[sectionIndex].questions.map(({ correctAnswer, ...q }) => q) });
+        return res.json({ questions: session.fullSections[sectionIndex].questions.map(({correctAnswer, ...q}) => q) });
     }
 
     let newQuestions = [];
     try {
         if (sectionId === 's2-fitb') {
-        //    console.log(`Generating S2 for ${req.user.sessionId}`);
+            console.log(`Generating S2 for ${req.user.sessionId}`);
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: PROMPT_S2_FITB(session.jd),
                 config: { responseMimeType: 'application/json' }
             });
             const rawQuestions = JSON.parse(cleanJSON(response.text));
-
+            
             // DEDUPLICATION LOGIC
             const seen = new Set();
             newQuestions = rawQuestions.filter(q => {
@@ -305,9 +315,9 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
 
             // If we lost questions due to duplicates, we might be short. Ideally we'd regenerate, but for now we proceed.
             newQuestions = newQuestions.map((q, i) => ({ ...q, id: 8000 + i }));
-        }
+        } 
         else if (sectionId === 's3-coding') {
-//            console.log(`Generating S3 for ${req.user.sessionId}`);
+            console.log(`Generating S3 for ${req.user.sessionId}`);
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: PROMPT_S3_CODING(session.jd),
@@ -316,8 +326,8 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
             newQuestions = JSON.parse(cleanJSON(response.text));
             // FORCE 2 QUESTIONS if AI returns single object or weird wrapper
             if (!Array.isArray(newQuestions)) {
-                if (newQuestions.questions) newQuestions = newQuestions.questions;
-                else newQuestions = [newQuestions];
+                 if(newQuestions.questions) newQuestions = newQuestions.questions;
+                 else newQuestions = [newQuestions];
             }
             newQuestions = newQuestions.map((q, i) => ({ ...q, id: 9000 + i }));
         }
@@ -341,50 +351,50 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
     session.fullSections[sectionIndex].questions = newQuestions;
     session.fullSections[sectionIndex].isPending = false;
 
-    res.json({ questions: newQuestions.map(({ correctAnswer, ...q }) => q) });
+    res.json({ questions: newQuestions.map(({correctAnswer, ...q}) => q) });
 });
 
 app.post('/api/assessment/heartbeat', verifyToken, (req, res) => {
     const session = SESSION_STORE.get(req.user.sessionId);
-    if (!session) return res.status(404).json({ error: "Session lost" });
-
+    if (!session) return res.status(404).json({error: "Session lost"});
+    
     // Log proctoring violation if present
     if (req.body.violation) {
-//        console.log(`[PROCTOR] Violation: ${req.body.violation} for ${req.user.sessionId}`);
+        console.log(`[PROCTOR] Violation: ${req.body.violation} for ${req.user.sessionId}`);
         if (req.body.snapshot) {
-            session.evidence.push({ type: req.body.violation, time: Date.now(), img: req.body.snapshot });
+             session.evidence.push({ type: req.body.violation, time: Date.now(), img: req.body.snapshot });
         }
     }
-
+    
     res.json({ status: session.status });
 });
 
 app.post('/api/assessment/submit', verifyToken, async (req, res) => {
     const session = SESSION_STORE.get(req.user.sessionId);
     if (!session) return res.status(404).json({ error: "Invalid Session" });
-
+    
     const { userAnswers } = req.body;
-    let totalScore = 0;
+    let totalScore = 0; 
     let maxScore = 0;
-
+    
     // Grade All Sections
     for (const section of session.fullSections) {
         for (const q of section.questions) {
             maxScore += (q.marks || 1);
             const userAns = userAnswers[q.id];
-
+            
             if (q.type === 'MCQ') {
                 if (Number(userAns) === Number(q.correctAnswer)) totalScore += (q.marks || 1);
-            }
+            } 
             else if (q.type === 'FITB') {
-                if (String(userAns || "").trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase()) totalScore += (q.marks || 2);
-            }
+                if (String(userAns||"").trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase()) totalScore += (q.marks || 2);
+            } 
             else if (q.type === 'CODING') {
                 // AI GRADING FOR CODING (Simulated to save time/tokens here, but using the rubric concept)
                 // In production, you would await this.
                 if (userAns && userAns.length > 20) {
                     try {
-                        const gradeRes = await ai.models.generateContent({
+                         const gradeRes = await ai.models.generateContent({
                             model: 'gemini-2.5-flash',
                             contents: GRADE_CODING_PROMPT(q.text, userAns)
                         });
@@ -403,41 +413,48 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
     session.finalScore = totalScore;
     session.maxScore = maxScore;
     session.endTime = Date.now();
-
-    const percentage = Math.round((totalScore / maxScore) * 100);
-
-    // DETAILED 3-4 LINE SUMMARY GENERATION
-    const summary = `The candidate scored ${totalScore}/${maxScore} (${percentage}%), demonstrating ${percentage > 70 ? 'strong' : 'moderate'} technical proficiency. They excelled in ${percentage > 70 ? 'Core Fundamentals and Problem Solving' : 'basic syntax but struggled with advanced concepts'}. A review of ${percentage > 70 ? 'edge case optimization' : 'data structures and algorithms'} is recommended to bridge identified gaps. Overall, the candidate shows ${percentage > 70 ? 'excellent potential for the role' : 'need for further training'}.`;
-
-    const feedback = {
-        summary: summary,
-        strengths: percentage > 70
-            ? ["Core Fundamentals", "Problem Solving", "Technical Accuracy"]
-            : ["Basic Syntax", "General Awareness"],
-        weaknesses: percentage > 70
-            ? ["Edge Case Optimization"]
-            : ["Advanced Algorithms", "System Design Concepts"],
-        roadmap: percentage > 70
-            ? ["Explore System Design Patterns", "Advanced Distributed Systems"]
-            : ["Review Data Structures", "Practice SQL Joins", "Study O-Notation"]
+    
+    let feedback = {
+        summary: "Assessment completed.",
+        strengths: ["Participation"],
+        weaknesses: [],
+        roadmap: []
     };
 
+    try {
+        const feedbackRes = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: GENERATE_FEEDBACK_PROMPT(session.jd, totalScore, maxScore),
+            config: { responseMimeType: 'application/json' }
+        });
+        feedback = JSON.parse(cleanJSON(feedbackRes.text));
+    } catch (e) {
+        console.error("Feedback Generation Failed", e);
+        // Fallback Feedback if AI fails
+        feedback = {
+            summary: `The candidate scored ${totalScore}/${maxScore}. Performance analysis suggests reviewing core concepts for better technical readiness.`,
+            strengths: ["Technical Attempt"],
+            weaknesses: ["Accuracy", "Optimization"],
+            roadmap: ["Review Core Algorithms", "Practice System Design"]
+        };
+    }
+    
     session.feedback = feedback;
+    
+    console.log(`Session ${req.user.sessionId} Completed. Score: ${totalScore}`);
 
-//    console.log(`Session ${req.user.sessionId} Completed. Score: ${totalScore}`);
-
-    res.json({
-        success: true,
-        score: totalScore,
-        maxScore,
+    res.json({ 
+        success: true, 
+        score: totalScore, 
+        maxScore, 
         feedback: feedback,
-        gradedDetails: {}
+        gradedDetails: {} 
     });
 });
 
 app.post('/api/code/run', verifyToken, async (req, res) => {
     const { language, code, problem } = req.body;
-
+    
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -465,29 +482,16 @@ app.post('/api/code/run', verifyToken, async (req, res) => {
             3. Do NOT provide the corrected code or solution. Just the execution log.
             `,
         });
-
+        
         res.json({ success: true, output: response.text });
     } catch (e) {
         console.error("Judge Error", e);
         // Fallback if AI fails
-        res.json({
-            success: false,
-            output: `> Compiling ${language}...\n> Error: Compiler Service Unavailable.\n> Please check your connection and try again.`
+        res.json({ 
+            success: false, 
+            output: `> Compiling ${language}...\n> Error: Compiler Service Unavailable.\n> Please check your connection and try again.` 
         });
     }
-});
-
-const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
-
-// Serve static assets
-app.use(express.static(frontendPath));
-
-// SPA fallback: any non-API GET should return index.html
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api')) {
-    return res.status(404).json({ error: 'Not found' });
-  }
-  res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
