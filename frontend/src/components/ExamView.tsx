@@ -1,8 +1,3 @@
-
-
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, EyeOff, Terminal, Loader2, PlayCircle, RefreshCw, Maximize2, Minimize2 } from 'lucide-react';
 import { Section, ExamState } from '../types';
