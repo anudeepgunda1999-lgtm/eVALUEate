@@ -36,7 +36,19 @@ const ADMIN_DIRECTORY = {
 const CANDIDATE_DIRECTORY = {
     'candidate@evalueate.com': 'EVAL2025',
     'test@user.com': 'TEST1234',
-    'student@university.edu': 'EXAM2024'
+    'student@university.edu': 'EXAM2024',
+    'saikiranadhi15@gmail.com': 'SAIKIRAN2024',
+    'akhilbalajiendla@gmail.com': 'AKHIL2024',
+    'rohandubyala@gmail.com': 'ROHAN2024',
+    'pavankatherashala345@gmail.com': 'PAVAN2024',
+    'yashwanthsukumarv@gmail.com': 'YASH2024',
+    'pakasriteja2021@gmail.com': 'TEJA2024',
+    'mandalatony123@gmail.com': 'TONY2024',
+    'vangariushasree041@gmail.com': 'USHASREE2024',
+    'borigamsaicharanya27@gmail.com': 'CHARANYA2024',
+    'namanipragna@gmail.com': 'PRAGNA2024',
+    'manognasadula28@gmail.com': 'MANOGNA2024',
+    'k.chanakya2004@gmail.com': 'CHANAKYA2024'
 };
 
 app.use(helmet());
@@ -492,6 +504,19 @@ app.post('/api/code/run', verifyToken, async (req, res) => {
             output: `> Compiling ${language}...\n> Error: Compiler Service Unavailable.\n> Please check your connection and try again.` 
         });
     }
+});
+
+const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
+
+// Serve static assets
+app.use(express.static(frontendPath));
+
+// SPA fallback: any non-API GET should return index.html
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
