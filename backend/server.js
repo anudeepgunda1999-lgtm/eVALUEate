@@ -137,22 +137,30 @@ DISTRIBUTION:
 Formatting Rules:
 1. Split the Problem Statement into 2-3 distinct paragraphs using newlines (\\n\\n).
 2. If the problem requires SQL, you MUST provide the Table Schema (Table Name, Columns, Data Types) clearly in the problem description.
-3. **MANDATORY**: Include 2 Sample Test Cases (Input/Output) at the end of the problem description.
-   Format:
-   Example 1:
-   Input: ...
-   Output: ...
-   
-   Example 2:
-   Input: ...
-   Output: ...
+3. **MANDATORY**: Provide 2 Sample Test Cases as a structured 'examples' array, NOT in the text.
 4. Do NOT make the entire text bold.
 5. Do NOT use asterisks (*) or markdown bolding for ANY words. Output plain text only.
 
 Format: JSON ARRAY containing exactly 2 objects.
 [
-  { "type": "CODING", "text": "DSA Problem text...\\n\\nExample 1:...", "marks": 25 },
-  { "type": "CODING", "text": "JD Specific Problem text (includes Schema if SQL)...\\n\\nExample 1:...", "marks": 25 }
+  { 
+    "type": "CODING", 
+    "text": "DSA Problem description here...", 
+    "examples": [
+       { "input": "...", "output": "..." },
+       { "input": "...", "output": "..." }
+    ],
+    "marks": 25 
+  },
+  { 
+    "type": "CODING", 
+    "text": "JD Specific Problem description...", 
+    "examples": [
+       { "input": "...", "output": "..." },
+       { "input": "...", "output": "..." }
+    ],
+    "marks": 25 
+  }
 ]
 Strictly valid JSON Array of length 2. No Markdown.
 `;
@@ -370,7 +378,17 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
                  if(newQuestions.questions) newQuestions = newQuestions.questions;
                  else newQuestions = [newQuestions];
             }
-            newQuestions = newQuestions.map((q, i) => ({ ...q, id: 9000 + i }));
+            // FORMATTING: Append Examples to Text programmatically to ensure consistency
+            newQuestions = newQuestions.map((q, i) => {
+                let fullText = q.text;
+                if (q.examples && Array.isArray(q.examples)) {
+                    fullText += "\n\n**Sample Test Cases:**\n";
+                    q.examples.forEach((ex, idx) => {
+                        fullText += `\nExample ${idx + 1}:\nInput: ${ex.input}\nOutput: ${ex.output}\n`;
+                    });
+                }
+                return { ...q, text: fullText, id: 9000 + i };
+            });
         }
     } catch (e) {
         console.error(`Dynamic Gen Error ${sectionId}`, e);
