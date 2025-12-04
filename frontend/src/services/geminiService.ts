@@ -170,14 +170,24 @@ export const triggerSectionGeneration = async (sectionId: string): Promise<any[]
                 Formatting Rules:
                 1. Split the Problem Statement into 2-3 distinct paragraphs using newlines (\\n\\n).
                 2. If the problem requires SQL, you MUST provide the Table Schema (Table Name, Columns, Data Types) clearly in the problem description.
-                3. **MANDATORY**: Include 2 Sample Test Cases (Input/Output) at the end of the problem description.
+                3. **MANDATORY**: Provide 2 Sample Test Cases as a structured 'examples' array, NOT in the text.
                 4. Do NOT make the entire text bold.
                 5. Do NOT use asterisks (*) or markdown bolding for ANY words. Output plain text only.
 
                 Format: JSON ARRAY containing exactly 2 objects.
                 [
-                  { "type": "CODING", "text": "DSA Problem text...\\n\\nExample 1:...", "marks": 25 },
-                  { "type": "CODING", "text": "JD Specific Problem text (includes Schema if SQL)...\\n\\nExample 1:...", "marks": 25 }
+                  { 
+                    "type": "CODING", 
+                    "text": "DSA Problem description...", 
+                    "examples": [ { "input": "...", "output": "..." } ],
+                    "marks": 25 
+                  },
+                  { 
+                    "type": "CODING", 
+                    "text": "JD Specific Problem description...", 
+                    "examples": [ { "input": "...", "output": "..." } ],
+                    "marks": 25 
+                  }
                 ]
                 Strictly valid JSON Array of length 2. No Markdown.`,
                 config: { responseMimeType: 'application/json' }
@@ -188,7 +198,17 @@ export const triggerSectionGeneration = async (sectionId: string): Promise<any[]
                  if(newQuestions.questions) newQuestions = newQuestions.questions;
                  else newQuestions = [newQuestions];
             }
-            newQuestions = newQuestions.map((q: any, i: number) => ({...q, id: 9000 + i, type: QuestionType.CODING }));
+             // FORMATTING: Append Examples to Text programmatically to ensure consistency
+            newQuestions = newQuestions.map((q: any, i: number) => {
+                let fullText = q.text;
+                if (q.examples && Array.isArray(q.examples)) {
+                    fullText += "\n\n**Sample Test Cases:**\n";
+                    q.examples.forEach((ex: any, idx: number) => {
+                        fullText += `\nExample ${idx + 1}:\nInput: ${ex.input}\nOutput: ${ex.output}\n`;
+                    });
+                }
+                return { ...q, text: fullText, id: 9000 + i, type: QuestionType.CODING };
+            });
         }
     } catch (e) {
         console.error("Client AI Generation Failed", e);
@@ -297,13 +317,23 @@ export const sendHeartbeat = async (violation?: string, snapshot?: string): Prom
     return { status: 'ACTIVE' };
 };
 
-export const compileAndRunCode = async (lang: string, code: string, problem: string, customInput?: string) => {
+export const compileAndRunCode = async (lang: string, code: string, problem: string, customInput?: string, examples?: any[]) => {
     try {
-        const res = await secureFetch('/code/run', { language: lang, code, problem, customInput });
+        const res = await secureFetch('/code/run', { language: lang, code, problem, customInput, examples });
         if (res.ok) return await res.json();
     } catch(e) {}
     
     // Dynamic Judge Fallback (Offline Mode)
+    // Construct Example Context
+    let examplesContext = "";
+    if (examples && Array.isArray(examples) && examples.length >= 2) {
+        examplesContext = `
+        Use these EXACT provided examples for the first two test cases:
+        Example 1 (Base Case): Input: ${JSON.stringify(examples[0].input)}
+        Example 2 (General Case): Input: ${JSON.stringify(examples[1].input)}
+        `;
+    }
+
     try {
          const judgeRes = await getClientAI().models.generateContent({
             model: 'gemini-2.5-flash',
@@ -314,6 +344,8 @@ export const compileAndRunCode = async (lang: string, code: string, problem: str
             ${code}
             ${customInput ? `\nUser provided Custom Input: "${customInput}"` : ''}
 
+            ${examplesContext}
+
             Task: Validate the code logic or SQL query. Run 3 mental test cases.
             MARKING SCHEMA: Base Case (5 Marks), General Case (8 Marks), Edge Case (12 Marks).
 
@@ -321,18 +353,19 @@ export const compileAndRunCode = async (lang: string, code: string, problem: str
             > Compiling/Executing ${lang}...
             > [Status] Syntax/Schema Check...
             ${customInput ? `> Running Custom Input [Input: ${customInput}] ... [Result/Output]\n` : ''}
-            > Running Test Case 1 (Base Case) [Input: <Specific Input Used>] [5 Marks]: [Result] ... [PASS/FAIL]
-            > Running Test Case 2 (General Case) [Input: <Specific Input Used>] [8 Marks]: [Result] ... [PASS/FAIL]
+            > Running Test Case 1 (Base Case) [Input: ${examples ? "As per Problem" : "Generated"}] [5 Marks]: [Result] ... [PASS/FAIL]
+            > Running Test Case 2 (General Case) [Input: ${examples ? "As per Problem" : "Generated"}] [8 Marks]: [Result] ... [PASS/FAIL]
             > Running Test Case 3 (Edge Case) [Input: <Specific Input Used>] [12 Marks]: [Result] ... [PASS/FAIL]
             
             > Final Verdict: [SUCCESS/FAILED]
 
             Rules:
             1. If Custom Input is provided, execute it FIRST and display the result clearly before standard tests.
-            2. If Syntax Error, output ONLY the error message and line number.
-            3. If SQL, assume the schema provided in the problem statement exists and validate the query against it.
-            4. Do NOT be lenient. If logic is wrong, FAIL the test case.
-            5. Do NOT provide the corrected code or solution. Just the execution log.
+            2. If "examples" were provided, you MUST use those specific inputs for Test Case 1 and 2 to ensure consistency with the problem description.
+            3. If Syntax Error, output ONLY the error message and line number.
+            4. If SQL, assume the schema provided in the problem statement exists and validate the query against it.
+            5. Do NOT be lenient. If logic is wrong, FAIL the test case.
+            6. Do NOT provide the corrected code or solution. Just the execution log.
             `,
         });
         return { success: true, output: judgeRes.text };

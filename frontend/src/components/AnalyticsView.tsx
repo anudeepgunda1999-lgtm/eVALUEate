@@ -24,6 +24,7 @@ const SecureEvidenceImage: React.FC<{ base64: string; adminId: string }> = ({ ba
     const [isHovering, setIsHovering] = useState(false);
 
     useEffect(() => {
+        if (!base64) return;
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -62,6 +63,14 @@ const SecureEvidenceImage: React.FC<{ base64: string; adminId: string }> = ({ ba
         });
         setIsHovering(true);
     };
+
+    if (!base64) {
+        return (
+            <div className="w-[320px] h-[240px] bg-slate-800 flex items-center justify-center text-slate-500 text-xs">
+                No Image Data Available
+            </div>
+        );
+    }
 
     return (
         <div 

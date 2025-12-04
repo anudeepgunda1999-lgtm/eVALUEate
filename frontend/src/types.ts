@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export enum View {
@@ -39,6 +40,7 @@ export interface Question {
   correctAnswer?: number | string; // Optional: Never present on client during exam
   marks: number;
   subtopic?: string;
+  examples?: { input: string, output: string }[]; // Structured examples for coding
 }
 
 export interface Section {
@@ -46,7 +48,8 @@ export interface Section {
   title: string;
   durationMinutes: number;
   questions: Question[];
-  type: 'MODERATE_MCQ' | 'HARD_MCQ' | 'FITB' | 'CODING' | 'SCREENING';
+  type: 'MCQ' | 'HARD_MCQ' | 'FITB' | 'CODING' | 'SCREENING';
+  isPending?: boolean;
 }
 
 export interface AssessmentData {

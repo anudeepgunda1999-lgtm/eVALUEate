@@ -362,8 +362,8 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
                 return !duplicate;
             });
 
-            // If we lost questions due to duplicates, we might be short. Ideally we'd regenerate, but for now we proceed.
-            newQuestions = newQuestions.map((q, i) => ({ ...q, id: 8000 + i }));
+            // Ensure FITB Type is strict
+            newQuestions = newQuestions.map((q, i) => ({ ...q, id: 8000 + i, type: 'FITB' }));
         } 
         else if (sectionId === 's3-coding') {
             console.log(`Generating S3 for ${req.user.sessionId}`);
@@ -387,7 +387,7 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
                         fullText += `\nExample ${idx + 1}:\nInput: ${ex.input}\nOutput: ${ex.output}\n`;
                     });
                 }
-                return { ...q, text: fullText, id: 9000 + i };
+                return { ...q, text: fullText, id: 9000 + i, type: 'CODING' };
             });
         }
     } catch (e) {
@@ -516,8 +516,18 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
 });
 
 app.post('/api/code/run', verifyToken, async (req, res) => {
-    const { language, code, problem, customInput } = req.body;
+    const { language, code, problem, customInput, examples } = req.body;
     
+    // Construct Example Context
+    let examplesContext = "";
+    if (examples && Array.isArray(examples) && examples.length >= 2) {
+        examplesContext = `
+        Use these EXACT provided examples for the first two test cases:
+        Example 1 (Base Case): Input: ${JSON.stringify(examples[0].input)}
+        Example 2 (General Case): Input: ${JSON.stringify(examples[1].input)}
+        `;
+    }
+
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -527,6 +537,8 @@ app.post('/api/code/run', verifyToken, async (req, res) => {
             Student Code:
             ${code}
             ${customInput ? `\nUser provided Custom Input: "${customInput}"` : ''}
+            
+            ${examplesContext}
 
             Task: Validate the code logic or SQL query. Run 3 mental test cases.
             MARKING SCHEMA: Base Case (5 Marks), General Case (8 Marks), Edge Case (12 Marks).
@@ -535,18 +547,19 @@ app.post('/api/code/run', verifyToken, async (req, res) => {
             > Compiling/Executing ${language}...
             > [Status] Syntax/Schema Check...
             ${customInput ? `> Running Custom Input [Input: ${customInput}] ... [Result/Output]\n` : ''}
-            > Running Test Case 1 (Base Case) [Input: <Specific Input Used>] [5 Marks]: [Result] ... [PASS/FAIL]
-            > Running Test Case 2 (General Case) [Input: <Specific Input Used>] [8 Marks]: [Result] ... [PASS/FAIL]
-            > Running Test Case 3 (Edge Case) [Input: <Specific Input Used>] [12 Marks]: [Result] ... [PASS/FAIL]
+            > Running Test Case 1 (Base Case) [Input: ${examples ? "As per Problem" : "Generated"}] [5 Marks]: [Result] ... [PASS/FAIL]
+            > Running Test Case 2 (General Case) [Input: ${examples ? "As per Problem" : "Generated"}] [8 Marks]: [Result] ... [PASS/FAIL]
+            > Running Test Case 3 (Edge Case) [Input: <Specific Edge Case>] [12 Marks]: [Result] ... [PASS/FAIL]
             
             > Final Verdict: [SUCCESS/FAILED]
 
             Rules:
             1. If Custom Input is provided, execute it FIRST and display the result clearly before standard tests.
-            2. If Syntax Error, output ONLY the error message and line number.
-            3. If SQL, assume the schema provided in the problem statement exists and validate the query against it.
-            4. Do NOT be lenient. If logic is wrong, FAIL the test case.
-            5. Do NOT provide the corrected code or solution. Just the execution log.
+            2. If "examples" were provided, you MUST use those specific inputs for Test Case 1 and 2 to ensure consistency with the problem description.
+            3. If Syntax Error, output ONLY the error message and line number.
+            4. If SQL, assume the schema provided in the problem statement exists and validate the query against it.
+            5. Do NOT be lenient. If logic is wrong, FAIL the test case.
+            6. Do NOT provide the corrected code or solution. Just the execution log.
             `,
         });
         

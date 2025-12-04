@@ -223,7 +223,9 @@ export const ExamView: React.FC<ExamViewProps> = ({ sections: initialSections, o
       try { 
           // Pass custom input if toggle is open
           const inputToRun = showCustomInput ? customInput : undefined;
-          const res = await compileAndRunCode(selectedLanguage, code, currentQuestion.text, inputToRun); 
+          // PASS FIXED EXAMPLES to ensure consistency
+          const examples = currentQuestion.examples || [];
+          const res = await compileAndRunCode(selectedLanguage, code, currentQuestion.text, inputToRun, examples); 
           setCompilerOutput({status: 'Success', output: res.output}); 
       } catch(e) {
           setCompilerOutput({status: 'Error', output: "Compilation Service Unavailable"});
