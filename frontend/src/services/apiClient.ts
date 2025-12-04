@@ -1,3 +1,4 @@
+
 import { AssessmentData, Section, DetailedFeedback } from '../types';
 
 const API_BASE = 'http://localhost:5000/api';
@@ -25,11 +26,11 @@ export const fetchSecureAssessment = async (
 /**
  * Replaces `compileAndRunCode` in `geminiService.ts`
  */
-export const secureCompile = async (language: string, code: string, problem: string) => {
+export const secureCompile = async (language: string, code: string, problem: string, customInput?: string, examples?: any[]) => {
     const response = await fetch(`${API_BASE}/code/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language, code, problem })
+        body: JSON.stringify({ language, code, problem, customInput, examples })
     });
     return await response.json();
 };

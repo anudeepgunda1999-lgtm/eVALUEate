@@ -49,6 +49,7 @@ const CANDIDATE_DIRECTORY = {
     'k.chanakya2004@gmail.com': 'CHANAKYA2024'
 };
 
+
 // TRACK ACCESS STATE (True = Locked/Used, False/Undefined = Active)
 const CANDIDATE_ACCESS_STATE = new Map();
 
@@ -251,6 +252,30 @@ app.post('/api/admin/reactivate', verifyToken, (req, res) => {
         return res.json({ success: true, message: "Candidate access reactivated." });
     }
     res.json({ success: false, message: "Candidate access was not locked." });
+});
+
+// NEW: MANAGE CANDIDATES (List)
+app.get('/api/admin/candidates', verifyToken, (req, res) => {
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: "Admin Only" });
+    const users = Object.entries(CANDIDATE_DIRECTORY).map(([email, code]) => ({
+        email, 
+        code, 
+        isLocked: CANDIDATE_ACCESS_STATE.has(email)
+    }));
+    res.json({ candidates: users });
+});
+
+// NEW: MANAGE CANDIDATES (Create)
+app.post('/api/admin/candidates', verifyToken, (req, res) => {
+    if (req.user.role !== 'ADMIN') return res.status(403).json({ error: "Admin Only" });
+    const { email, accessCode } = req.body;
+    
+    if (!email || !accessCode) return res.status(400).json({ error: "Missing fields" });
+    if (CANDIDATE_DIRECTORY[email]) return res.status(400).json({ error: "Candidate email already exists" });
+
+    CANDIDATE_DIRECTORY[email] = accessCode;
+    console.log(`[ADMIN] Created new candidate: ${email}`);
+    res.json({ success: true, message: "Candidate created successfully" });
 });
 
 // INITIAL GENERATION: S1 ONLY (30 MCQs)

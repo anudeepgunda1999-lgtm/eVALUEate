@@ -1,3 +1,4 @@
+
 import { Section, ServerSubmissionResult, QuestionType } from "../types";
 import { signRequest, analyzeEnvironment } from "../utils/security";
 import { GoogleGenAI } from "@google/genai";
@@ -299,6 +300,21 @@ export const fetchAllSessions = async () => {
         if (res.ok) { const d = await res.json(); return d.sessions; }
     } catch(e) {}
     return [];
+};
+
+export const fetchAuthorizedCandidates = async () => {
+    try {
+        const res = await secureFetch('/admin/candidates', {}, 'GET');
+        if (res.ok) return await res.json();
+    } catch(e) {}
+    return { candidates: [] };
+};
+
+export const createCandidate = async (email: string, accessCode: string) => {
+    try {
+        const res = await secureFetch('/admin/candidates', { email, accessCode });
+        return await res.json();
+    } catch (e) { return { success: false, error: "Connection Error" }; }
 };
 
 export const fetchSessionEvidence = async (sid: string) => {
