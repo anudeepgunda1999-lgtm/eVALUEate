@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const fs = require('fs');
 
 // Load environment variables
 require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') });
@@ -59,6 +60,50 @@ app.use(express.json({ limit: '10mb' }));
 
 const SESSION_STORE = new Map(); 
 
+// --- PERSISTENCE LAYER ---
+const DB_FILE = path.resolve(__dirname, 'evalueate.db.json');
+
+const loadDB = () => {
+    try {
+        if (fs.existsSync(DB_FILE)) {
+            const raw = fs.readFileSync(DB_FILE, 'utf8');
+            const data = JSON.parse(raw);
+            
+            // Restore Session Store
+            if (data.sessions) {
+                data.sessions.forEach(([k, v]) => SESSION_STORE.set(k, v));
+            }
+            // Restore Candidates
+            if (data.candidates) {
+                CANDIDATE_DIRECTORY = { ...CANDIDATE_DIRECTORY, ...data.candidates };
+            }
+            // Restore Access State
+            if (data.accessState) {
+                data.accessState.forEach(([k, v]) => CANDIDATE_ACCESS_STATE.set(k, v));
+            }
+            console.log(`[DB] Loaded ${SESSION_STORE.size} sessions and ${Object.keys(CANDIDATE_DIRECTORY).length} candidates from disk.`);
+        }
+    } catch (e) {
+        console.error("[DB] Failed to load database:", e.message);
+    }
+};
+
+const saveDB = () => {
+    try {
+        const data = {
+            sessions: Array.from(SESSION_STORE.entries()),
+            candidates: CANDIDATE_DIRECTORY,
+            accessState: Array.from(CANDIDATE_ACCESS_STATE.entries())
+        };
+        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.error("[DB] Failed to save database:", e.message);
+    }
+};
+
+// Initialize DB
+loadDB();
+
 // --- UTILS ---
 const cleanJSON = (text) => {
     if (!text) return "[]";
@@ -99,6 +144,7 @@ const logAction = (sessionId, action, details = "") => {
             action,
             details
         });
+        saveDB(); // Persist logs
     }
 };
 
@@ -279,6 +325,7 @@ app.post('/api/admin/reactivate', verifyToken, (req, res) => {
     
     if (CANDIDATE_ACCESS_STATE.has(email)) {
         CANDIDATE_ACCESS_STATE.delete(email);
+        saveDB(); // Persist change
         console.log(`[ADMIN] Reactivated access for ${email}`);
         return res.json({ success: true, message: "Candidate access reactivated." });
     }
@@ -305,6 +352,7 @@ app.post('/api/admin/candidates', verifyToken, (req, res) => {
     if (CANDIDATE_DIRECTORY[email]) return res.status(400).json({ error: "Candidate email already exists" });
 
     CANDIDATE_DIRECTORY[email] = accessCode;
+    saveDB(); // Persist change
     console.log(`[ADMIN] Created new candidate: ${email}`);
     res.json({ success: true, message: "Candidate created successfully" });
 });
@@ -370,6 +418,8 @@ app.post('/api/assessment/generate', async (req, res) => {
             finalScore: 0,
             sectionScores: { s1: 0, s2: 0, s3: 0 }
         });
+        
+        saveDB(); // Persist new session
 
         const token = generateToken({ sessionId, role: 'CANDIDATE' });
         
@@ -458,12 +508,20 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
             // FORMATTING: Append Examples to Text programmatically to ensure consistency
             newQuestions = newQuestions.map((q, i) => {
                 let fullText = q.text || "Problem Statement Loading...";
-                if (q.examples && Array.isArray(q.examples)) {
-                    fullText += "\n\n**Sample Test Cases:**\n";
-                    q.examples.forEach((ex, idx) => {
-                        fullText += `\nExample ${idx + 1}:\nInput: ${ex.input}\nOutput: ${ex.output}\n`;
-                    });
+                
+                // Ensure examples is an array
+                if (!q.examples || !Array.isArray(q.examples)) {
+                    q.examples = [
+                        { input: "(See Problem Description)", output: "(See Problem Description)" }
+                    ];
                 }
+
+                fullText += "\n\n**Sample Test Cases:**\n";
+                q.examples.forEach((ex, idx) => {
+                    const inp = typeof ex.input === 'object' ? JSON.stringify(ex.input) : ex.input;
+                    const out = typeof ex.output === 'object' ? JSON.stringify(ex.output) : ex.output;
+                    fullText += `\nExample ${idx + 1}:\nInput: ${inp}\nOutput: ${out}\n`;
+                });
                 return { ...q, text: fullText, id: 9000 + i, type: 'CODING' };
             });
         }
@@ -511,6 +569,7 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
     // Save to Store
     session.fullSections[sectionIndex].questions = newQuestions;
     session.fullSections[sectionIndex].isPending = false;
+    saveDB(); // Persist generated section
 
     res.json({ questions: newQuestions.map(({correctAnswer, ...q}) => q) });
 });
@@ -521,10 +580,10 @@ app.post('/api/assessment/heartbeat', verifyToken, (req, res) => {
     
     // Log proctoring violation if present
     if (req.body.violation) {
-        console.log(`[PROCTOR] Violation: ${req.body.violation} for ${req.user.sessionId}`);
         logAction(req.user.sessionId, "VIOLATION_DETECTED", req.body.violation);
         if (req.body.snapshot) {
              session.evidence.push({ type: req.body.violation, time: Date.now(), img: req.body.snapshot });
+             saveDB(); // Persist evidence
         }
     }
     
@@ -539,103 +598,111 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
     let totalScore = 0; 
     let maxScore = 0;
     
+    // Strict Section-Wise Breakdown
     let sectionScores = { s1: 0, s2: 0, s3: 0 };
     
-    // LOCK ACCESS for this candidate
-    CANDIDATE_ACCESS_STATE.set(session.candidate.email, true);
-    logAction(req.user.sessionId, "SUBMITTED", "Assessment Completed");
-    console.log(`[ACCESS] Credentials locked for ${session.candidate.email}`);
-    
-    // Grade All Sections
-    for (const section of session.fullSections) {
-        for (const q of section.questions) {
-            maxScore += (q.marks || 1);
-            const userAns = userAnswers[q.id];
-            
-            if (q.type === 'MCQ') {
-                if (Number(userAns) === Number(q.correctAnswer)) {
-                    totalScore += (q.marks || 1);
-                    sectionScores.s1 += (q.marks || 1);
-                }
-            } 
-            else if (q.type === 'FITB') {
-                const u = String(userAns||"").trim();
-                const c = String(q.correctAnswer).trim();
+    try {
+        // LOCK ACCESS for this candidate
+        CANDIDATE_ACCESS_STATE.set(session.candidate.email, true);
+        logAction(req.user.sessionId, "SUBMITTED", "Assessment Completed");
+        console.log(`[ACCESS] Credentials locked for ${session.candidate.email}`);
+        
+        // Grade All Sections
+        for (const section of session.fullSections) {
+            for (const q of section.questions) {
+                maxScore += (q.marks || 1);
+                const userAns = userAnswers[q.id];
                 
-                // Case-Insensitive by default unless flag is present
-                const match = q.caseSensitive 
-                    ? u === c
-                    : u.toLowerCase() === c.toLowerCase();
+                // SECTION 1: MCQ (Exact Match)
+                if (q.type === 'MCQ') {
+                    if (Number(userAns) === Number(q.correctAnswer)) {
+                        totalScore += (q.marks || 1);
+                        sectionScores.s1 += (q.marks || 1);
+                    }
+                } 
+                // SECTION 2: FITB (String Match, Optional Case Sensitivity)
+                else if (q.type === 'FITB') {
+                    const u = String(userAns||"").trim();
+                    const c = String(q.correctAnswer).trim();
+                    
+                    const match = q.caseSensitive 
+                        ? u === c
+                        : u.toLowerCase() === c.toLowerCase();
 
-                if (match) {
-                    totalScore += (q.marks || 2);
-                    sectionScores.s2 += (q.marks || 2);
-                }
-            } 
-            else if (q.type === 'CODING') {
-                // RUTHLESS AI GRADING FOR CODING
-                if (userAns && userAns.length > 20) {
-                    try {
-                         const gradeRes = await ai.models.generateContent({
-                            model: 'gemini-2.5-flash',
-                            contents: GRADE_CODING_PROMPT(q.text, userAns, q.examples || [])
-                        });
-                        const awarded = parseInt(cleanJSON(gradeRes.text)) || 0;
-                        totalScore += awarded;
-                        sectionScores.s3 += awarded;
-                        logAction(req.user.sessionId, "GRADING_CODING", `Q${q.id} Awarded: ${awarded}/25`);
-                    } catch (e) {
-                        // Fallback Grading if AI fails - Strict zero if fail
-                        logAction(req.user.sessionId, "GRADING_ERROR", `Failed to grade Q${q.id}`);
+                    if (match) {
+                        totalScore += (q.marks || 2);
+                        sectionScores.s2 += (q.marks || 2);
+                    }
+                } 
+                // SECTION 3: CODING (Ruthless AI Grading)
+                else if (q.type === 'CODING') {
+                    if (userAns && userAns.length > 20) {
+                        try {
+                             const gradeRes = await ai.models.generateContent({
+                                model: 'gemini-2.5-flash',
+                                contents: GRADE_CODING_PROMPT(q.text, userAns, q.examples || [])
+                            });
+                            
+                            // Regex Parse to extract score even if AI chats (e.g., "Score: 20")
+                            const match = gradeRes.text.match(/\b(0|5|13|17|20|25)\b/);
+                            const awarded = match ? parseInt(match[0]) : 0;
+                            
+                            totalScore += awarded;
+                            sectionScores.s3 += awarded;
+                            logAction(req.user.sessionId, "GRADING_CODING", `Q${q.id} Awarded: ${awarded}/25`);
+                        } catch (e) {
+                            // Fallback Grading if AI fails (Safety Net)
+                            logAction(req.user.sessionId, "GRADING_ERROR", `Failed to grade Q${q.id}`);
+                        }
                     }
                 }
             }
         }
-    }
 
-    session.status = 'COMPLETED';
-    session.finalScore = totalScore;
-    session.maxScore = maxScore;
-    session.sectionScores = sectionScores;
-    session.endTime = Date.now();
-    
-    let feedback = {
-        summary: "Assessment completed.",
-        strengths: ["Participation"],
-        weaknesses: [],
-        roadmap: []
-    };
-
-    try {
-        const feedbackRes = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: GENERATE_FEEDBACK_PROMPT(session.jd, totalScore, maxScore, sectionScores, session.candidate.name),
-            config: { responseMimeType: 'application/json' }
-        });
-        feedback = JSON.parse(cleanJSON(feedbackRes.text));
-    } catch (e) {
-        console.error("Feedback Generation Failed", e);
-        // Fallback Feedback if AI fails - minimalist, not fake text
-        feedback = {
-            summary: "Detailed AI analysis currently unavailable. Score recorded successfully.",
+        // GENERATE DYNAMIC FEEDBACK
+        let feedback = {
+            summary: "Assessment processed successfully.",
             strengths: ["Completed Assessment"],
-            weaknesses: ["Review Detailed Score Breakdown"],
-            roadmap: ["Consult Admin for Report"]
+            weaknesses: [],
+            roadmap: []
         };
-    }
-    
-    session.feedback = feedback;
-    
-    console.log(`Session ${req.user.sessionId} Completed. Score: ${totalScore}`);
 
-    res.json({ 
-        success: true, 
-        score: totalScore, 
-        maxScore, 
-        feedback: feedback, 
-        sectionScores,
-        gradedDetails: {} 
-    });
+        try {
+            const feedbackRes = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: GENERATE_FEEDBACK_PROMPT(session.jd, totalScore, maxScore, sectionScores, session.candidate.name),
+                config: { responseMimeType: 'application/json' }
+            });
+            feedback = JSON.parse(cleanJSON(feedbackRes.text));
+        } catch (e) {
+            console.error("Feedback Gen Failed", e);
+        }
+        session.feedback = feedback;
+
+    } catch(err) {
+        console.error("Submission Process Error:", err);
+    } finally {
+        // ALWAYS SAVE STATE, even if grading hiccups
+        session.status = 'COMPLETED';
+        session.finalScore = totalScore;
+        session.maxScore = maxScore;
+        session.sectionScores = sectionScores;
+        session.endTime = Date.now();
+        
+        saveDB(); // Persist completion state
+
+        console.log(`Session ${req.user.sessionId} FINALIZED.`);
+        console.log(`SCORES: Total=${totalScore}, S1=${sectionScores.s1}, S2=${sectionScores.s2}, S3=${sectionScores.s3}`);
+        
+        res.json({ 
+            success: true, 
+            score: totalScore, 
+            maxScore, 
+            feedback: session.feedback, 
+            sectionScores,
+            gradedDetails: {} 
+        });
+    }
 });
 
 app.post('/api/code/run', verifyToken, async (req, res) => {
