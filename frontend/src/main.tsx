@@ -3,6 +3,7 @@ import React, { ErrorInfo, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import './index.css';
 
 interface Props {
   children?: ReactNode;
