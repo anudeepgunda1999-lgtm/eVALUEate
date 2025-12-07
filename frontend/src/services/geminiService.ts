@@ -224,12 +224,20 @@ export const triggerSectionGeneration = async (sectionId: string): Promise<any[]
              // FORMATTING: Append Examples to Text programmatically to ensure consistency
             newQuestions = newQuestions.map((q: any, i: number) => {
                 let fullText = q.text || "Problem Statement Loading...";
-                if (q.examples && Array.isArray(q.examples)) {
-                    fullText += "\n\n**Sample Test Cases:**\n";
-                    q.examples.forEach((ex: any, idx: number) => {
-                        fullText += `\nExample ${idx + 1}:\nInput: ${ex.input}\nOutput: ${ex.output}\n`;
-                    });
+                
+                // Ensure examples is an array
+                if (!q.examples || !Array.isArray(q.examples)) {
+                    q.examples = [
+                        { input: "(See Problem Description)", output: "(See Problem Description)" }
+                    ];
                 }
+
+                fullText += "\n\n**Sample Test Cases:**\n";
+                q.examples.forEach((ex: any, idx: number) => {
+                    const inp = typeof ex.input === 'object' ? JSON.stringify(ex.input) : ex.input;
+                    const out = typeof ex.output === 'object' ? JSON.stringify(ex.output) : ex.output;
+                    fullText += `\nExample ${idx + 1}:\nInput: ${inp}\nOutput: ${out}\n`;
+                });
                 return { ...q, text: fullText, id: 9000 + i, type: QuestionType.CODING };
             });
         }
