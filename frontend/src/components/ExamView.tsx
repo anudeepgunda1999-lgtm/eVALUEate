@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, EyeOff, Terminal, Loader2, PlayCircle, RefreshCw, Maximize2, Minimize2, Keyboard } from 'lucide-react';
 import { Section, ExamState } from '../types';
@@ -233,6 +234,12 @@ export const ExamView: React.FC<ExamViewProps> = ({ sections: initialSections, o
           setIsCompiling(false); 
       }
   };
+  
+  const getCommentPrefix = (lang: string) => {
+    if (lang === 'sql') return '--';
+    if (lang === 'python' || lang === 'ruby') return '#';
+    return '//';
+  };
 
   // --- EARLY RETURNS (Conditionals) ---
 
@@ -358,52 +365,52 @@ export const ExamView: React.FC<ExamViewProps> = ({ sections: initialSections, o
                           onKeyDown={e => handleKeyDown(e, currentQuestion.id)}
                           className="flex-1 bg-[#1e1e1e] p-4 font-mono text-sm outline-none resize-none leading-relaxed text-slate-200" 
                           spellCheck={false}
-                          placeholder={`// Type your ${selectedLanguage} solution here...`}
+                          placeholder={`${getCommentPrefix(selectedLanguage)} Type your ${selectedLanguage} solution here...`}
                       />
                   </div>
 
                   {/* TERMINAL OUTPUT PANEL */}
-                  <div className={`bg-[#1e1e1e] border-t-2 border-[#333] flex flex-col relative transition-all duration-300 ${showCustomInput ? 'h-64' : 'h-48'}`}>
-                      <div className="px-4 py-2 bg-[#2d2d2d] text-xs text-slate-400 font-bold uppercase tracking-wider flex justify-between items-center">
+                  <div className={`bg-[#1e1e1e] border-t-2 border-[#333] flex flex-col relative transition-all duration-300 ${showCustomInput ? 'h-72' : 'h-56'}`}>
+                      <div className="px-6 py-3 bg-[#252526] text-xs text-slate-400 font-bold uppercase tracking-wider flex justify-between items-center border-b border-[#333]">
                           <div className="flex items-center space-x-4">
                               <span>Output Terminal</span>
-                               {/* START RUN BUTTON (BOTTOM LEFT) */}
+                               {/* START RUN BUTTON (BOTTOM LEFT) - ENHANCED VISIBILITY */}
                                <button 
                                     onClick={runCode} 
                                     disabled={isCompiling} 
-                                    className="flex items-center space-x-2 px-4 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded transition-all shadow-lg shadow-emerald-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="flex items-center space-x-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded shadow-lg shadow-emerald-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
                                 >
-                                    {isCompiling ? <Loader2 className="w-3 h-3 animate-spin" /> : <PlayCircle className="w-3 h-3" />}
+                                    {isCompiling ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
                                     <span>{isCompiling ? 'Running...' : 'Run Code'}</span>
                                 </button>
                                 {/* END RUN BUTTON */}
                           </div>
-                          <div className="flex items-center space-x-3">
-                              <label className="flex items-center space-x-2 cursor-pointer hover:text-white transition-colors">
+                          <div className="flex items-center space-x-4">
+                              <label className="flex items-center space-x-2 cursor-pointer hover:text-white transition-colors p-1 rounded hover:bg-[#333]">
                                   <input 
                                     type="checkbox" 
                                     checked={showCustomInput} 
                                     onChange={e => setShowCustomInput(e.target.checked)}
-                                    className="w-3 h-3 rounded border-slate-500 bg-[#333] text-indigo-500 focus:ring-offset-0 focus:ring-0"
+                                    className="w-4 h-4 rounded border-slate-500 bg-[#333] text-indigo-500 focus:ring-offset-0 focus:ring-0"
                                   />
-                                  <span className="flex items-center"><Keyboard className="w-3 h-3 mr-1"/> Custom Input</span>
+                                  <span className="flex items-center font-medium"><Keyboard className="w-4 h-4 mr-2"/> Custom Input</span>
                               </label>
-                              {compilerOutput && <span className={compilerOutput.status === 'Success' ? 'text-emerald-400' : 'text-rose-400'}>{compilerOutput.status}</span>}
+                              {compilerOutput && <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${compilerOutput.status === 'Success' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-rose-900/30 text-rose-400'}`}>{compilerOutput.status.toUpperCase()}</span>}
                           </div>
                       </div>
                       
                       {showCustomInput && (
-                          <div className="p-2 bg-[#1e1e1e] border-b border-[#333]">
+                          <div className="p-3 bg-[#1e1e1e] border-b border-[#333] animate-in slide-in-from-top-2">
                               <textarea 
                                   value={customInput}
                                   onChange={e => setCustomInput(e.target.value)}
-                                  className="w-full h-16 bg-[#252526] text-slate-300 p-2 text-xs font-mono outline-none border border-[#444] rounded resize-none focus:border-indigo-500"
+                                  className="w-full h-20 bg-[#252526] text-slate-300 p-3 text-xs font-mono outline-none border border-[#444] rounded resize-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                                   placeholder="Enter your custom input here..."
                               />
                           </div>
                       )}
 
-                      <pre className="flex-1 p-4 font-mono text-xs overflow-y-auto text-slate-300 whitespace-pre-wrap">
+                      <pre className="flex-1 p-4 font-mono text-xs overflow-y-auto text-slate-300 whitespace-pre-wrap bg-[#1e1e1e]">
                           {compilerOutput?.output || '> Waiting for execution...'}
                           <div ref={outputEndRef} />
                       </pre>

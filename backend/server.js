@@ -124,25 +124,29 @@ Strictly valid JSON. No Markdown.
 `;
 
 const PROMPT_S2_FITB = (jd) => `
-Generate 10 DISTINCT and UNIQUE Technical Fill-in-the-Blank questions.
+Generate exactly 10 DISTINCT Technical Fill-in-the-Blank questions.
 DISTRIBUTION:
 - 5 Questions MUST cover Core CS Fundamentals (DSA, DBMS, OS, Networks).
 - 5 Questions MUST cover: "${jd.substring(0, 300)}".
 
 Formatting Rules:
-1. Ensure every question is unique. Do not repeat concepts.
-2. Do NOT make the entire question bold.
-3. Do NOT use asterisks (*) or markdown bolding.
-4. Use '___' for the blank.
+1. Return a JSON ARRAY of objects.
+2. Ensure every question is unique. 
+3. Do NOT make the entire question bold.
+4. Do NOT use asterisks (*).
 
 Format: JSON Array.
-Keys: 
-"id", 
-"type": "FITB", 
-"text", 
-"correctAnswer", 
-"marks": 2,
-"caseSensitive": boolean (true/false. Set true ONLY if case strictly matters, e.g. specific acronyms. Default false).
+[
+  {
+    "id": 1, 
+    "type": "FITB", 
+    "text": "The time complexity of QuickSort is ___ in worst case.", 
+    "correctAnswer": "O(n^2)", 
+    "marks": 2,
+    "caseSensitive": false
+  },
+  ...
+]
 
 Strictly valid JSON. No Markdown.
 `;
@@ -154,32 +158,25 @@ DISTRIBUTION:
 - Question 2: Job Description Specific Scenario related to: "${jd.substring(0, 300)}".
 
 Formatting Rules:
-1. Split the Problem Statement into 2-3 distinct paragraphs using newlines (\\n\\n).
-2. If the problem requires SQL, you MUST provide the Table Schema (Table Name, Columns, Data Types) clearly in the problem description.
-3. **MANDATORY**: Provide 2 Sample Test Cases as a structured 'examples' array, NOT in the text.
-4. Do NOT make the entire text bold.
-5. Do NOT use asterisks (*) or markdown bolding for ANY words. Output plain text only.
+1. Return a JSON ARRAY of exactly 2 objects.
+2. Split the Problem Statement ("text" field) into 2-3 distinct paragraphs using newlines (\\n\\n).
+3. If the problem requires SQL, you MUST provide the Table Schema in the "text" field.
+4. **MANDATORY**: Provide 2 Sample Test Cases as a structured 'examples' array.
+5. Do NOT use asterisks (*) or markdown.
+6. The "text" field MUST contain the full problem description. Do not leave it empty.
 
 Format: JSON ARRAY containing exactly 2 objects.
 [
   { 
     "type": "CODING", 
-    "text": "DSA Problem description here...", 
+    "text": "Detailed problem description here...\\n\\nMore details...", 
     "examples": [
        { "input": "...", "output": "..." },
        { "input": "...", "output": "..." }
     ],
     "marks": 25 
   },
-  { 
-    "type": "CODING", 
-    "text": "JD Specific Problem description...", 
-    "examples": [
-       { "input": "...", "output": "..." },
-       { "input": "...", "output": "..." }
-    ],
-    "marks": 25 
-  }
+  ...
 ]
 Strictly valid JSON Array of length 2. No Markdown.
 `;
@@ -206,19 +203,22 @@ Mentally execute the code against the provided examples and hidden edge cases.
 Return ONLY the integer score (0, 5, 13, 17, 20, or 25). Do not return text.
 `;
 
-const GENERATE_FEEDBACK_PROMPT = (jd, score, maxScore, sectionScores) => `
-Generate a detailed technical feedback report for a candidate applying for the role: "${jd}".
-Overall Score: ${score} / ${maxScore}.
-Section Breakdown: 
-- MCQ: ${sectionScores.s1}
-- FITB: ${sectionScores.s2}
-- Coding: ${sectionScores.s3}
+const GENERATE_FEEDBACK_PROMPT = (jd, score, maxScore, sectionScores, candidateName) => `
+You are a Senior Technical Recruiter and Engineering Manager.
+Analyze the assessment results for candidate "${candidateName || 'Candidate'}" applying for: "${jd}".
+
+Data:
+- Total Score: ${score} / ${maxScore}
+- Section 1 (MCQ - CS Fundamentals): ${sectionScores.s1} marks
+- Section 2 (FITB - Technical Depth): ${sectionScores.s2} marks
+- Section 3 (Coding - Problem Solving): ${sectionScores.s3} marks
 
 Task:
-1. Write a 3-4 line professional SUMMARY of their performance. Mention specifically which section was their strongest.
-2. List 3 Key STRENGTHS based on the section scores.
-3. List 3 Areas of WEAKNESS/IMPROVEMENT.
-4. Provide a 3-step ROADMAP to improve.
+Generate a completely UNIQUE, dynamic, and non-generic feedback report.
+1. **Summary**: Write a 3-4 line professional narrative about their specific performance. Mention their strongest section explicitly. Do NOT use generic templates.
+2. **Strengths**: List 3 specific technical strengths based on the high-scoring sections.
+3. **Weaknesses**: List 3 specific areas to improve based on the low-scoring sections.
+4. **Roadmap**: Provide 3 concrete, actionable steps to improve for this specific role.
 
 Output Format: JSON Object
 {
@@ -404,6 +404,8 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
     logAction(req.user.sessionId, "SECTION_GENERATED", `Generated ${sectionId}`);
 
     let newQuestions = [];
+    let isFallbackUsed = false;
+
     try {
         if (sectionId === 's2-fitb') {
             console.log(`Generating S2 for ${req.user.sessionId}`);
@@ -414,6 +416,11 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
             });
             const rawQuestions = JSON.parse(cleanJSON(response.text));
             
+            // VALIDATION: Must be an array of at least 5 questions
+            if (!Array.isArray(rawQuestions) || rawQuestions.length < 5) {
+                throw new Error("AI returned insufficient FITB questions");
+            }
+
             // DEDUPLICATION LOGIC
             const seen = new Set();
             newQuestions = rawQuestions.filter(q => {
@@ -423,7 +430,7 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
             });
 
             // Ensure FITB Type is strict
-            newQuestions = newQuestions.map((q, i) => ({ ...q, id: 8000 + i, type: 'FITB' }));
+            newQuestions = newQuestions.map((q, i) => ({ ...q, id: 8000 + i, type: 'FITB', caseSensitive: !!q.caseSensitive }));
         } 
         else if (sectionId === 's3-coding') {
             console.log(`Generating S3 for ${req.user.sessionId}`);
@@ -433,14 +440,24 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
                 config: { responseMimeType: 'application/json' }
             });
             newQuestions = JSON.parse(cleanJSON(response.text));
-            // FORCE 2 QUESTIONS if AI returns single object or weird wrapper
-            if (!Array.isArray(newQuestions)) {
+            
+            // VALIDATION: Force 2 Questions
+            if (!Array.isArray(newQuestions) || newQuestions.length < 1) {
                  if(newQuestions.questions) newQuestions = newQuestions.questions;
-                 else newQuestions = [newQuestions];
+                 else if (newQuestions.text) newQuestions = [newQuestions];
+                 else throw new Error("AI returned invalid Coding structure");
             }
+
+            // VALIDATION: Check for empty text
+            const hasValidText = newQuestions.every(q => q.text && q.text.length > 20);
+            if (!hasValidText) throw new Error("AI generated empty coding problem text");
+            
+            // If only 1 generated, assume error and throw to trigger fallback (since strict requirement is 2)
+            if (newQuestions.length < 2) throw new Error("AI generated insufficient coding questions");
+
             // FORMATTING: Append Examples to Text programmatically to ensure consistency
             newQuestions = newQuestions.map((q, i) => {
-                let fullText = q.text;
+                let fullText = q.text || "Problem Statement Loading...";
                 if (q.examples && Array.isArray(q.examples)) {
                     fullText += "\n\n**Sample Test Cases:**\n";
                     q.examples.forEach((ex, idx) => {
@@ -452,16 +469,41 @@ app.post('/api/assessment/generate-section', verifyToken, async (req, res) => {
         }
     } catch (e) {
         console.error(`Dynamic Gen Error ${sectionId}`, e);
-        // Robust Fallback
+        isFallbackUsed = true;
+    }
+
+    // ROBUST FALLBACK INJECTION (If AI failed)
+    if (isFallbackUsed || newQuestions.length === 0) {
+        console.log(`Using Backup Questions for ${sectionId}`);
         if (sectionId === 's2-fitb') {
             newQuestions = [
                 { id: 8001, type: "FITB", text: "The complexity of binary search is O(___).", correctAnswer: "log n", marks: 2 },
-                { id: 8002, type: "FITB", text: "SQL command to remove a table is DROP ___.", correctAnswer: "TABLE", marks: 2 }
+                { id: 8002, type: "FITB", text: "SQL command to remove a table is DROP ___.", correctAnswer: "TABLE", marks: 2 },
+                { id: 8003, type: "FITB", text: "HTTP status code 404 means Not ___.", correctAnswer: "Found", marks: 2 },
+                { id: 8004, type: "FITB", text: "In OOP, inheritance represents a '___-a' relationship.", correctAnswer: "is", marks: 2 },
+                { id: 8005, type: "FITB", text: "To protect shared resources in threads, we use a ___.", correctAnswer: "Lock", marks: 2 },
+                { id: 8006, type: "FITB", text: "The data structure using LIFO principle is a ___.", correctAnswer: "Stack", marks: 2 },
+                { id: 8007, type: "FITB", text: "DNS translates domain names to ___ addresses.", correctAnswer: "IP", marks: 2 },
+                { id: 8008, type: "FITB", text: "In REST API, POST is used to ___ a resource.", correctAnswer: "Create", marks: 2 },
+                { id: 8009, type: "FITB", text: "Git command to combine branches is git ___.", correctAnswer: "merge", marks: 2 },
+                { id: 8010, type: "FITB", text: "Docker uses ___ to package applications.", correctAnswer: "containers", marks: 2 }
             ];
         } else {
             newQuestions = [
-                { id: 9001, type: "CODING", text: "Problem 1: Implement a Balanced Binary Search Tree insertion logic.\n\nExample 1:\nInput: ...", marks: 25 },
-                { id: 9002, type: "CODING", text: "Problem 2: Optimize an API response handler for large datasets.\n\nExample 1:\nInput: ...", marks: 25 }
+                { 
+                    id: 9001, 
+                    type: "CODING", 
+                    text: "Problem 1: Implement a function to check if a Linked List has a cycle.\n\n**Sample Test Cases:**\nExample 1:\nInput: Head -> [3,2,0,-4], Pos = 1\nOutput: True\n", 
+                    examples: [{input:"[3,2,0,-4], pos=1", output:"true"}],
+                    marks: 25 
+                },
+                { 
+                    id: 9002, 
+                    type: "CODING", 
+                    text: "Problem 2: Given an array of integers, return indices of the two numbers such that they add up to a specific target.\n\n**Sample Test Cases:**\nExample 1:\nInput: nums = [2,7,11,15], target = 9\nOutput: [0,1]\n", 
+                    examples: [{input:"nums = [2,7,11,15], target = 9", output:"[0,1]"}],
+                    marks: 25 
+                }
             ];
         }
     }
@@ -567,18 +609,18 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
     try {
         const feedbackRes = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: GENERATE_FEEDBACK_PROMPT(session.jd, totalScore, maxScore, sectionScores),
+            contents: GENERATE_FEEDBACK_PROMPT(session.jd, totalScore, maxScore, sectionScores, session.candidate.name),
             config: { responseMimeType: 'application/json' }
         });
         feedback = JSON.parse(cleanJSON(feedbackRes.text));
     } catch (e) {
         console.error("Feedback Generation Failed", e);
-        // Fallback Feedback if AI fails
+        // Fallback Feedback if AI fails - minimalist, not fake text
         feedback = {
-            summary: `The candidate scored ${totalScore}/${maxScore}. Performance analysis suggests reviewing core concepts for better technical readiness.`,
-            strengths: ["Technical Attempt"],
-            weaknesses: ["Accuracy", "Optimization"],
-            roadmap: ["Review Core Algorithms", "Practice System Design"]
+            summary: "Detailed AI analysis currently unavailable. Score recorded successfully.",
+            strengths: ["Completed Assessment"],
+            weaknesses: ["Review Detailed Score Breakdown"],
+            roadmap: ["Consult Admin for Report"]
         };
     }
     
