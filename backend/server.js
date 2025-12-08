@@ -148,6 +148,40 @@ const logAction = (sessionId, action, details = "") => {
     }
 };
 
+// Helper to infer topic from question text
+const inferTopic = (text) => {
+    const t = text.toLowerCase();
+    if (t.includes('sql') || t.includes('database') || t.includes('acid') || t.includes('join')) return 'Databases';
+    if (t.includes('http') || t.includes('rest') || t.includes('api') || t.includes('dns')) return 'Networking';
+    if (t.includes('os') || t.includes('process') || t.includes('thread') || t.includes('deadlock')) return 'OS';
+    if (t.includes('complexity') || t.includes('array') || t.includes('tree') || t.includes('graph')) return 'DSA';
+    if (t.includes('test') || t.includes('agile') || t.includes('git')) return 'Software Eng';
+    return 'General Coding';
+};
+
+// --- RANDOMIZED TOPIC SELECTOR FOR DIVERSITY ---
+const getRandomCoreTopics = () => {
+    const topics = [
+        "Database Indexing (B-Trees)", "ACID Properties", "TCP vs UDP Handshakes", "HTTP Status Codes", 
+        "REST vs GraphQL", "Deadlocks in OS", "Virtual Memory & Paging", "CAP Theorem", "Load Balancing Algorithms",
+        "Git Branching Strategies", "Docker Layer Caching", "Kubernetes Pods", "Solid Principles", 
+        "Design Patterns (Singleton/Factory)", "Time Complexity Analysis", "Hash Map Collision Resolution",
+        "Garbage Collection Mechanisms", "JWT Authentication", "OAuth2 flows", "CI/CD Pipelines"
+    ];
+    // Shuffle and pick 5
+    return topics.sort(() => 0.5 - Math.random()).slice(0, 5).join(", ");
+};
+
+const getRandomDSATopic = () => {
+    const topics = [
+        "Dynamic Programming (DP) optimization", "Graph Algorithms (BFS/DFS/Dijkstra)", "Binary Search Tree (BST) operations", 
+        "Heaps & Priority Queues", "Trie & String Manipulation", "Sliding Window technique", 
+        "Backtracking & Recursion puzzles", "Advanced Linked List Manipulation", "Stack & Queue Design Problems",
+        "Union Find & Disjoint Sets", "Bit Manipulation Tricks"
+    ];
+    return topics[Math.floor(Math.random() * topics.length)];
+};
+
 // --- OPTIMIZED PROMPTS (COMPACT JSON) ---
 
 const PROMPT_S1_MCQ = (jd) => `
@@ -169,10 +203,12 @@ Keys:
 Strictly valid JSON. No Markdown.
 `;
 
-const PROMPT_S2_FITB = (jd) => `
+const PROMPT_S2_FITB = (jd) => {
+    const randomTopics = getRandomCoreTopics();
+    return `
 Generate exactly 10 DISTINCT Technical Fill-in-the-Blank questions.
 DISTRIBUTION:
-- 5 Questions MUST cover Core CS Fundamentals (DSA, DBMS, OS, Networks).
+- 5 Questions MUST cover these specific random Core CS topics: [${randomTopics}]. Do NOT use generic questions like 'Binary Search is O(log n)'. Go deeper.
 - 5 Questions MUST cover: "${jd.substring(0, 300)}".
 
 Formatting Rules:
@@ -186,8 +222,8 @@ Format: JSON Array.
   {
     "id": 1, 
     "type": "FITB", 
-    "text": "The time complexity of QuickSort is ___ in worst case.", 
-    "correctAnswer": "O(n^2)", 
+    "text": "The HTTP status code for a permanent redirect is ___.", 
+    "correctAnswer": "301", 
     "marks": 2,
     "caseSensitive": false
   },
@@ -196,11 +232,14 @@ Format: JSON Array.
 
 Strictly valid JSON. No Markdown.
 `;
+};
 
-const PROMPT_S3_CODING = (jd) => `
-Generate EXACTLY 2 distinct LeetCode Hard/Medium Coding Problems.
+const PROMPT_S3_CODING = (jd) => {
+    const dsaTopic = getRandomDSATopic();
+    return `
+Generate EXACTLY 2 distinct LeetCode Medium/Hard Coding Problems.
 DISTRIBUTION:
-- Question 1: Pure Data Structures & Algorithms (DSA) - e.g., Graph, Tree, DP, Trie.
+- Question 1: Pure Data Structures & Algorithms (DSA) - Focus specifically on **${dsaTopic}**.
 - Question 2: Job Description Specific Scenario related to: "${jd.substring(0, 300)}".
 
 Formatting Rules:
@@ -226,6 +265,7 @@ Format: JSON ARRAY containing exactly 2 objects.
 ]
 Strictly valid JSON Array of length 2. No Markdown.
 `;
+};
 
 const GRADE_CODING_PROMPT = (problem, code, examples) => `
 Act as a RUTHLESS Senior Tech Interviewer and Compiler.
@@ -298,6 +338,7 @@ app.get('/api/admin/sessions', verifyToken, (req, res) => {
             score: session.finalScore || 0,
             maxScore: session.maxScore || 100,
             sectionScores: session.sectionScores || { s1: 0, s2: 0, s3: 0 },
+            topicScores: session.topicScores || {},
             timestamp: session.startTime,
             status: session.status,
             evidenceCount: session.evidence ? session.evidence.length : 0,
@@ -314,7 +355,8 @@ app.post('/api/admin/evidence', verifyToken, (req, res) => {
     res.json({ 
         evidence: session.evidence || [], 
         logs: session.logs || [],
-        candidateName: session.candidate.name 
+        candidateName: session.candidate.name,
+        topicScores: session.topicScores || {}
     });
 });
 
@@ -416,7 +458,8 @@ app.post('/api/assessment/generate', async (req, res) => {
             evidence: [],
             logs: [{ timestamp: Date.now(), action: "SESSION_STARTED", details: "Assessment Initialized" }],
             finalScore: 0,
-            sectionScores: { s1: 0, s2: 0, s3: 0 }
+            sectionScores: { s1: 0, s2: 0, s3: 0 },
+            topicScores: { 'DSA': 0, 'Databases': 0, 'Networking': 0, 'OS': 0, 'Software Eng': 0, 'General Coding': 0 }
         });
         
         saveDB(); // Persist new session
@@ -600,7 +643,9 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
     
     // Strict Section-Wise Breakdown
     let sectionScores = { s1: 0, s2: 0, s3: 0 };
-    
+    // Topic-Wise Breakdown
+    let topicScores = session.topicScores || { 'DSA': 0, 'Databases': 0, 'Networking': 0, 'OS': 0, 'Software Eng': 0, 'General Coding': 0 };
+
     try {
         // LOCK ACCESS for this candidate
         CANDIDATE_ACCESS_STATE.set(session.candidate.email, true);
@@ -612,12 +657,14 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
             for (const q of section.questions) {
                 maxScore += (q.marks || 1);
                 const userAns = userAnswers[q.id];
+                const topic = inferTopic(q.text);
                 
                 // SECTION 1: MCQ (Exact Match)
                 if (q.type === 'MCQ') {
                     if (Number(userAns) === Number(q.correctAnswer)) {
                         totalScore += (q.marks || 1);
                         sectionScores.s1 += (q.marks || 1);
+                        topicScores[topic] = (topicScores[topic] || 0) + (q.marks || 1);
                     }
                 } 
                 // SECTION 2: FITB (String Match, Optional Case Sensitivity)
@@ -632,6 +679,7 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
                     if (match) {
                         totalScore += (q.marks || 2);
                         sectionScores.s2 += (q.marks || 2);
+                        topicScores[topic] = (topicScores[topic] || 0) + (q.marks || 2);
                     }
                 } 
                 // SECTION 3: CODING (Ruthless AI Grading)
@@ -649,6 +697,11 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
                             
                             totalScore += awarded;
                             sectionScores.s3 += awarded;
+                            
+                            // For Coding, assume main topic is usually DSA unless specified
+                            const codeTopic = q.text.includes('SQL') ? 'Databases' : 'DSA';
+                            topicScores[codeTopic] = (topicScores[codeTopic] || 0) + awarded;
+
                             logAction(req.user.sessionId, "GRADING_CODING", `Q${q.id} Awarded: ${awarded}/25`);
                         } catch (e) {
                             // Fallback Grading if AI fails (Safety Net)
@@ -687,6 +740,7 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
         session.finalScore = totalScore;
         session.maxScore = maxScore;
         session.sectionScores = sectionScores;
+        session.topicScores = topicScores;
         session.endTime = Date.now();
         
         saveDB(); // Persist completion state
@@ -700,6 +754,7 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
             maxScore, 
             feedback: session.feedback, 
             sectionScores,
+            topicScores,
             gradedDetails: {} 
         });
     }
@@ -707,7 +762,8 @@ app.post('/api/assessment/submit', verifyToken, async (req, res) => {
 
 app.post('/api/code/run', verifyToken, async (req, res) => {
     const { language, code, problem, customInput, examples } = req.body;
-    
+    console.log(`[COMPILER] Run request for ${language} in session ${req.user.sessionId}`);
+
     // Construct Example Context with EXPECTED OUTPUT
     let examplesContext = "";
     if (examples && Array.isArray(examples) && examples.length >= 2) {
@@ -760,7 +816,7 @@ app.post('/api/code/run', verifyToken, async (req, res) => {
         // Fallback if AI fails
         res.json({ 
             success: false, 
-            output: `> Compiling ${language}...\n> Error: Compiler Service Unavailable.\n> Please check your connection and try again.` 
+            output: `> Compiling ${language}...\n> Error: Compiler Service Unavailable (Backend).\n> Debug: ${e.message}\n> Please check server logs.` 
         });
     }
 });

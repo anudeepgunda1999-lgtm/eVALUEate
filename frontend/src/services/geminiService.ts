@@ -173,11 +173,15 @@ export const triggerSectionGeneration = async (sectionId: string): Promise<any[]
             // Ensure IDs are unique for frontend keys
             newQuestions = newQuestions.map((q: any, i: number) => ({...q, id: 8000 + i, type: QuestionType.FITB, caseSensitive: !!q.caseSensitive }));
         } else if (sectionId === 's3-coding') {
+             // RANDOMIZE TOPIC
+             const dsaTopics = ["Dynamic Programming", "Graph Algorithms", "Binary Trees", "Heaps", "Sliding Window", "Backtracking", "Linked Lists", "Tries"];
+             const randomTopic = dsaTopics[Math.floor(Math.random() * dsaTopics.length)];
+
              const aiRes = await getClientAI().models.generateContent({
                 model: 'gemini-2.5-flash',
-                contents: `Generate EXACTLY 2 distinct LeetCode Hard/Medium Coding Problems.
+                contents: `Generate EXACTLY 2 distinct LeetCode Medium/Hard Coding Problems.
                 DISTRIBUTION:
-                - Question 1: Pure Data Structures & Algorithms (DSA) - e.g., Graph, Tree, DP, Trie.
+                - Question 1: Pure Data Structures & Algorithms (DSA) - Focus specifically on: "${randomTopic}".
                 - Question 2: Job Description Specific Scenario related to: "${jd}".
 
                 Formatting Rules:
@@ -389,7 +393,7 @@ export const fetchSessionEvidence = async (sid: string) => {
         const res = await secureFetch('/admin/evidence', { sessionId: sid });
         if (res.ok) return await res.json();
     } catch(e) {}
-    return { evidence: [], logs: [], candidateName: 'Unknown' };
+    return { evidence: [], logs: [], candidateName: 'Unknown', topicScores: {} };
 };
 
 export const sendHeartbeat = async (violation?: string, snapshot?: string): Promise<{ status: string, reason?: string }> => {
@@ -454,7 +458,7 @@ export const compileAndRunCode = async (lang: string, code: string, problem: str
         });
         return { success: true, output: judgeRes.text };
     } catch(e) {
-        return { success: true, output: `> Compiling ${lang}...\n> Error: Offline Compiler Unavailable.` };
+        return { success: true, output: `> Compiling ${lang}...\n> Error: Offline Compiler Unavailable.\n> Debug: Please check API key/Network connection.` };
     }
 };
 

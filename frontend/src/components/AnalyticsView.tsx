@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Lock, BarChart2, PieChart, CheckCircle, XCircle, AlertTriangle, User, Download, Clock, Search, Users, FileText, Eye, Shield, X, RefreshCw, Unlock, Plus, Key, ScrollText } from 'lucide-react';
+import { Lock, BarChart2, PieChart, CheckCircle, XCircle, AlertTriangle, User, Download, Clock, Search, Users, FileText, Eye, Shield, X, RefreshCw, Unlock, Plus, Key, ScrollText, Radar } from 'lucide-react';
 import { AssessmentData, QuestionType, Question, AssessmentHistoryItem } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, ScatterChart, Scatter, ZAxis } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, ScatterChart, Scatter, ZAxis, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar as RechartsRadar } from 'recharts';
 import { loginAdmin, fetchSessionEvidence, fetchAllSessions, reactivateCandidate, createCandidate, fetchAuthorizedCandidates } from '../services/geminiService';
 
 interface AnalyticsViewProps {
@@ -122,8 +122,8 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
 
   // Security Modal State
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [evidenceData, setEvidenceData] = useState<{evidence: any[], logs: any[], candidateName: string} | null>(null);
-  const [modalTab, setModalTab] = useState<'EVIDENCE'|'LOGS'>('EVIDENCE');
+  const [evidenceData, setEvidenceData] = useState<{evidence: any[], logs: any[], candidateName: string, topicScores: Record<string, number>} | null>(null);
+  const [modalTab, setModalTab] = useState<'EVIDENCE'|'LOGS'|'TOPICS'>('TOPICS');
 
   const refreshData = async () => {
       setIsRefreshing(true);
@@ -174,7 +174,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
   const handleViewEvidence = async (sessionId: string) => {
       setSelectedSessionId(sessionId);
       setEvidenceData(null);
-      setModalTab('EVIDENCE');
+      setModalTab('TOPICS');
       const data = await fetchSessionEvidence(sessionId);
       setEvidenceData(data);
   };
@@ -208,7 +208,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
       if (backendSessions.length === 0) return alert("No data available to export.");
 
       // CSV Header
-      let csv = "Session ID,Candidate Name,Email,Status,Score,S1(MCQ),S2(FITB),S3(Code),Max Score,Time Taken (Min),Violations Count,Summary,Strengths,Weaknesses,Roadmap\n";
+      let csv = "Session ID,Candidate Name,Email,Status,Score,S1(MCQ),S2(FITB),S3(Code),DSA Score,DB Score,Net Score,OS Score,Max Score,Time Taken (Min),Violations Count,Summary,Strengths,Weaknesses,Roadmap\n";
 
       // CSV Rows
       backendSessions.forEach(session => {
@@ -218,6 +218,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
           const roadmap = (feedback.roadmap || []).join('; ');
           const summary = (feedback.summary || "").replace(/,/g, " "); // simple escape
           const scores = session.sectionScores || {s1:0,s2:0,s3:0};
+          const topics = session.topicScores || {};
 
           const row = [
               session.sessionId,
@@ -228,6 +229,10 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
               scores.s1,
               scores.s2,
               scores.s3,
+              topics['DSA'] || 0,
+              topics['Databases'] || 0,
+              topics['Networking'] || 0,
+              topics['OS'] || 0,
               session.maxScore,
               Math.round((session.timestamp - (session.startTime || session.timestamp)) / 60000) || 30, // Approx
               session.evidenceCount,
@@ -245,6 +250,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
   const handleExportStudentCSV = (session: any) => {
       const feedback = session.feedback || {};
       const scores = session.sectionScores || {s1:0,s2:0,s3:0};
+      const topics = session.topicScores || {};
       
       let csv = `eVALUEate Individual Candidate Report\n`;
       csv += `Generated On,${new Date().toLocaleString()}\n\n`;
@@ -259,6 +265,13 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
       csv += `Section 2 (FITB),${scores.s2}\n`;
       csv += `Section 3 (Coding),${scores.s3}\n\n`;
       
+      csv += `TOPIC ANALYSIS\n`;
+      csv += `DSA,${topics['DSA'] || 0}\n`;
+      csv += `Databases,${topics['Databases'] || 0}\n`;
+      csv += `Networking,${topics['Networking'] || 0}\n`;
+      csv += `Operating Systems,${topics['OS'] || 0}\n`;
+      csv += `Software Engineering,${topics['Software Eng'] || 0}\n\n`;
+
       csv += `PERFORMANCE ANALYSIS\n`;
       csv += `Summary,"${feedback.summary || 'N/A'}"\n`;
       csv += `Key Strengths,"${(feedback.strengths || []).join('; ')}"\n`;
@@ -267,7 +280,6 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
 
       csv += `PROCTORING LOG\n`;
       csv += `Violations Detected,${session.evidenceCount}\n`;
-      // Note: We don't export strict proctoring images/details to CSV for privacy/size reasons
       
       downloadCSV(`${session.candidateName.replace(/\s+/g,'_')}_Report.csv`, csv);
   };
@@ -517,7 +529,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
         )}
       </div>
 
-      {/* SECURITY MODAL: EVIDENCE & LOGS VIEWER */}
+      {/* SECURITY MODAL: EVIDENCE & LOGS & TOPICS VIEWER */}
       {selectedSessionId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm secure-content">
               <div className="w-full max-w-6xl h-[90vh] bg-slate-900 rounded-2xl overflow-hidden flex flex-col border border-slate-700 shadow-2xl">
@@ -526,6 +538,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
                       <div>
                           <h2 className="text-xl font-bold text-white flex items-center"><Lock className="w-5 h-5 mr-2 text-rose-500" /> Secure Vault: {evidenceData?.candidateName || 'Loading...'}</h2>
                           <div className="flex space-x-4 mt-4">
+                              <button 
+                                onClick={() => setModalTab('TOPICS')}
+                                className={`text-sm font-bold pb-1 border-b-2 ${modalTab === 'TOPICS' ? 'border-emerald-500 text-white' : 'border-transparent text-slate-500'}`}
+                              >
+                                Topic Analysis
+                              </button>
                               <button 
                                 onClick={() => setModalTab('EVIDENCE')}
                                 className={`text-sm font-bold pb-1 border-b-2 ${modalTab === 'EVIDENCE' ? 'border-rose-500 text-white' : 'border-transparent text-slate-500'}`}
@@ -547,6 +565,46 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ data, answers, his
                   <div className="flex-1 overflow-y-auto p-8 bg-slate-950">
                       {!evidenceData ? (
                           <div className="flex items-center justify-center h-full text-slate-500">Decrypting Secure Storage...</div>
+                      ) : modalTab === 'TOPICS' ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-full">
+                              {/* Radar Chart */}
+                              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center">
+                                  <h3 className="text-white font-bold mb-4">Skill Proficiency Radar</h3>
+                                  <div className="w-full h-80">
+                                      <ResponsiveContainer width="100%" height="100%">
+                                          <RadarChart cx="50%" cy="50%" outerRadius="80%" data={[
+                                              { subject: 'DSA', A: evidenceData.topicScores?.['DSA'] || 0, fullMark: 30 },
+                                              { subject: 'Databases', A: evidenceData.topicScores?.['Databases'] || 0, fullMark: 20 },
+                                              { subject: 'Networking', A: evidenceData.topicScores?.['Networking'] || 0, fullMark: 20 },
+                                              { subject: 'OS', A: evidenceData.topicScores?.['OS'] || 0, fullMark: 20 },
+                                              { subject: 'Software Eng', A: evidenceData.topicScores?.['Software Eng'] || 0, fullMark: 20 },
+                                          ]}>
+                                              <PolarGrid stroke="#334155" />
+                                              <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                                              <PolarRadiusAxis angle={30} domain={[0, 30]} tick={{ fill: '#475569' }} />
+                                              <RechartsRadar name="Candidate" dataKey="A" stroke="#10b981" fill="#10b981" fillOpacity={0.3} />
+                                          </RadarChart>
+                                      </ResponsiveContainer>
+                                  </div>
+                              </div>
+
+                              {/* Breakdown Table */}
+                              <div className="space-y-4">
+                                  <h3 className="text-white font-bold">Detailed Topic Breakdown</h3>
+                                  {Object.entries(evidenceData.topicScores || {}).map(([topic, score], idx) => (
+                                      <div key={idx} className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
+                                          <div>
+                                              <div className="text-slate-300 font-medium">{topic}</div>
+                                              <div className="text-xs text-slate-500">Accumulated Score</div>
+                                          </div>
+                                          <div className="text-2xl font-bold text-emerald-500">{score}</div>
+                                      </div>
+                                  ))}
+                                  {Object.keys(evidenceData.topicScores || {}).length === 0 && (
+                                      <div className="text-slate-500 italic">No specific topic data available.</div>
+                                  )}
+                              </div>
+                          </div>
                       ) : modalTab === 'EVIDENCE' ? (
                             evidenceData.evidence.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full text-slate-500">

@@ -225,7 +225,8 @@ export const ExamView: React.FC<ExamViewProps> = ({ sections: initialSections, o
           // Pass custom input if toggle is open
           const inputToRun = showCustomInput ? customInput : undefined;
           // PASS FIXED EXAMPLES to ensure consistency
-          const examples = currentQuestion.examples || [];
+          const examples = Array.isArray(currentQuestion.examples) ? currentQuestion.examples : [];
+          
           const res = await compileAndRunCode(selectedLanguage, code, currentQuestion.text, inputToRun, examples); 
           setCompilerOutput({status: 'Success', output: res.output}); 
       } catch(e) {
@@ -365,16 +366,16 @@ export const ExamView: React.FC<ExamViewProps> = ({ sections: initialSections, o
                           onKeyDown={e => handleKeyDown(e, currentQuestion.id)}
                           className="flex-1 bg-[#1e1e1e] p-4 font-mono text-sm outline-none resize-none leading-relaxed text-slate-200" 
                           spellCheck={false}
-                          placeholder={`${getCommentPrefix(selectedLanguage)} Type your ${selectedLanguage} solution here...`}
+                          placeholder={`${getCommentPrefix(selectedLanguage)} Type your ${selectedLanguage} solution here... (Tab adds 2 spaces)`}
                       />
                   </div>
 
                   {/* TERMINAL OUTPUT PANEL */}
-                  <div className={`bg-[#1e1e1e] border-t-2 border-[#333] flex flex-col relative transition-all duration-300 ${showCustomInput ? 'h-72' : 'h-56'}`}>
+                  <div className={`bg-[#181818] border-t-2 border-[#333] flex flex-col relative transition-all duration-300 ${showCustomInput ? 'h-72' : 'h-56'}`}>
                       <div className="px-6 py-3 bg-[#252526] text-xs text-slate-400 font-bold uppercase tracking-wider flex justify-between items-center border-b border-[#333]">
                           <div className="flex items-center space-x-4">
                               <span>Output Terminal</span>
-                               {/* START RUN BUTTON (BOTTOM LEFT) - ENHANCED VISIBILITY */}
+                               {/* START RUN BUTTON (BOTTOM LEFT OF EDITOR AREA) - ENHANCED VISIBILITY */}
                                <button 
                                     onClick={runCode} 
                                     disabled={isCompiling} 
@@ -410,7 +411,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ sections: initialSections, o
                           </div>
                       )}
 
-                      <pre className="flex-1 p-4 font-mono text-xs overflow-y-auto text-slate-300 whitespace-pre-wrap bg-[#1e1e1e]">
+                      <pre className="flex-1 p-4 font-mono text-xs overflow-y-auto text-slate-300 whitespace-pre-wrap bg-[#181818]">
                           {compilerOutput?.output || '> Waiting for execution...'}
                           <div ref={outputEndRef} />
                       </pre>
